@@ -18,7 +18,8 @@ import {
   Alert,
   Card,
   CardContent,
-  Grid
+  Grid,
+  Snackbar
 } from '@mui/material';
 import {
   ExpandMore,
@@ -28,18 +29,21 @@ import {
   Schedule,
   Mouse,
   Clear,
-  Refresh
+  Refresh,
+  ContentCopy,
+  OpenInNew
 } from '@mui/icons-material';
 import { useUrlStorage } from '../hooks/useUrlStorage';
-import { ShortenedUrl } from '../types';
+import { ShortenedUrl, ClickData } from '../types';
 import { logger } from '../utils/logger';
 
 const Statistics: React.FC = () => {
-  const { getAllUrls, clearAllUrls } = useUrlStorage();
+  const { getAllUrls, clearAllUrls, addClick } = useUrlStorage();
   const [expandedRows, setExpandedRows] = useState<{ [key: string]: boolean }>({});
   const [sortBy, setSortBy] = useState<string>('createdAt');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'expired'>('all');
+  const [copySnackbar, setCopySnackbar] = useState<{ open: boolean; message: string }>({ open: false, message: '' });
 
   const allUrls = getAllUrls();
 
@@ -56,6 +60,50 @@ const Statistics: React.FC = () => {
       clearAllUrls();
       logger.info('Cleared all URLs and statistics', {}, 'Statistics');
     }
+  };
+
+  const handleUrlClick = (url: ShortenedUrl) => {
+    // Create click data
+    const clickData: ClickData = {
+      id: Math.random().toString(36).substr(2, 9),
+      timestamp: Date.now(),
+      userAgent: navigator.userAgent,
+      referrer: document.referrer || 'Direct',
+      ip: '127.0.0.1', // Simulated IP for client-side demo
+      location: 'Unknown' // Simulated location for client-side demo
+    };
+
+    // Add click to storage
+    addClick(url.shortCode, clickData);
+
+    // Open the original URL in a new tab
+    window.open(url.originalUrl, '_blank');
+
+    logger.info('URL clicked', { shortCode: url.shortCode, originalUrl: url.originalUrl }, 'Statistics');
+  };
+
+  const handleCopyUrl = async (shortCode: string) => {
+    const shortUrl = `${window.location.origin}/${shortCode}`;
+    
+    try {
+      await navigator.clipboard.writeText(shortUrl);
+      setCopySnackbar({ open: true, message: 'Short URL copied to clipboard!' });
+      logger.info('URL copied to clipboard', { shortCode, shortUrl }, 'Statistics');
+    } catch (error) {
+      // Fallback for older browsers
+      const textArea = document.createElement('textarea');
+      textArea.value = shortUrl;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+      setCopySnackbar({ open: true, message: 'Short URL copied to clipboard!' });
+      logger.info('URL copied to clipboard (fallback)', { shortCode, shortUrl }, 'Statistics');
+    }
+  };
+
+  const closeCopySnackbar = () => {
+    setCopySnackbar({ open: false, message: '' });
   };
 
   const isExpired = (url: ShortenedUrl): boolean => {
@@ -289,9 +337,35 @@ const Statistics: React.FC = () => {
                       <TableCell>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                           <Link fontSize="small" color="action" />
-                          <Typography variant="body2" fontFamily="monospace">
+                          <Typography 
+                            variant="body2" 
+                            fontFamily="monospace"
+                            sx={{ 
+                              cursor: 'pointer',
+                              color: 'primary.main',
+                              textDecoration: 'underline',
+                              '&:hover': {
+                                color: 'primary.dark'
+                              }
+                            }}
+                            onClick={() => handleUrlClick(url)}
+                          >
                             {url.shortCode}
                           </Typography>
+                          <IconButton
+                            size="small"
+                            onClick={() => handleCopyUrl(url.shortCode)}
+                            title="Copy short URL"
+                          >
+                            <ContentCopy fontSize="small" />
+                          </IconButton>
+                          <IconButton
+                            size="small"
+                            onClick={() => handleUrlClick(url)}
+                            title="Open URL"
+                          >
+                            <OpenInNew fontSize="small" />
+                          </IconButton>
                         </Box>
                       </TableCell>
                       <TableCell>
@@ -416,6 +490,16 @@ const Statistics: React.FC = () => {
           )}
         </Paper>
       )}
+
+      <Snackbar
+        open={copySnackbar.open}
+        autoHideDuration={6000}
+        onClose={closeCopySnackbar}
+      >
+        <Alert onClose={closeCopySnackbar} severity="success" sx={{ width: '100%' }}>
+          {copySnackbar.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };
